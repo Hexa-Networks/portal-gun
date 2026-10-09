@@ -17,6 +17,20 @@ if [ -n "${GW:-}" ]; then
     log "rota fixa para o LNS $LNS_IP via $GW ($DEV)"
 fi
 
+# Libera o encaminhamento de tráfego roteado (não originado no host) para a rede de trânsito.
+# O Docker bloqueia por padrão conexões novas vindas de fora para uma bridge. Necessário no
+# macOS (o Mac roteia pela VM do Colima) ou para outras máquinas da LAN usarem este host.
+if [ "${ALLOW_FORWARD:-no}" = yes ]; then
+    BRIDGE=${TRANSIT_BRIDGE:-pgun0}
+    CHAIN=DOCKER-USER
+    iptables -nL "$CHAIN" >/dev/null 2>&1 || CHAIN=FORWARD
+    for dir in -i -o; do
+        iptables -C "$CHAIN" "$dir" "$BRIDGE" -j ACCEPT 2>/dev/null \
+            || iptables -I "$CHAIN" "$dir" "$BRIDGE" -j ACCEPT
+    done
+    log "encaminhamento liberado para a bridge $BRIDGE ($CHAIN)"
+fi
+
 for d in bgpd staticd; do
     grep -q "^$d=" /etc/frr/daemons \
         && sed -i "s/^$d=.*/$d=yes/" /etc/frr/daemons \

@@ -73,7 +73,8 @@ ask BGP_LOCAL_AS  "ASN local"                         no
 ask BGP_REMOTE_AS "ASN do LNS"                        no
 
 # Avisa se há versão nova no GitHub (não bloqueia se estiver offline)
-if timeout 15 ./update.sh --check >/dev/null 2>&1; then :; else
+TIMEOUT=""; command -v timeout >/dev/null && TIMEOUT="timeout 15"
+if $TIMEOUT ./update.sh --check >/dev/null 2>&1; then :; else
     [ $? -eq 10 ] && echo ">>> Há uma versão nova do portal-gun no GitHub. Rode ./update.sh para ver e atualizar." && echo
 fi
 
@@ -83,7 +84,7 @@ echo "Containers no ar. Acompanhe com:"
 echo "  docker compose logs -f"
 echo "  docker exec -it portal-gun-frr vtysh -c 'show bgp summary'"
 
-if ! systemctl is-enabled portal-gun.service >/dev/null 2>&1; then
+if [ "$(uname)" = Linux ] && ! systemctl is-enabled portal-gun.service >/dev/null 2>&1; then
     echo
     echo "Para subir automaticamente no boot, rode como root: ./install.sh"
 fi

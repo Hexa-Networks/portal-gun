@@ -2,7 +2,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      frr frr-pythontools iproute2 procps \
+      frr frr-pythontools iproute2 iptables procps \
  && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

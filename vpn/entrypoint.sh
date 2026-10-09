@@ -127,6 +127,18 @@ iptables -t nat -C PREROUTING -i ppp+ -p tcp --dport 179 -j DNAT --to-destinatio
 iptables -t mangle -C FORWARD -o ppp+ -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
     || iptables -t mangle -A FORWARD -o ppp+ -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 
+# Conexões que entram pela rede de trânsito devem ter as respostas devolvidas por ela,
+# mesmo quando a origem não é 128.128.0.1 (ex.: Mac via VM do Colima, LAN roteando pelo host).
+# Sem isso, a resposta seguiria a default (ppp0) e voltaria para dentro do túnel.
+TRANSIT_IF=$(ip -o -4 route get "$TRANSIT_HOST_IP" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+iptables -t mangle -C PREROUTING -i "$TRANSIT_IF" -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1 2>/dev/null \
+    || iptables -t mangle -A PREROUTING -i "$TRANSIT_IF" -m conntrack --ctstate NEW -j CONNMARK --set-mark 0x1
+iptables -t mangle -C PREROUTING -i ppp+ -j CONNMARK --restore-mark 2>/dev/null \
+    || iptables -t mangle -A PREROUTING -i ppp+ -j CONNMARK --restore-mark
+ip rule del fwmark 0x1 lookup 100 2>/dev/null || true
+ip rule add fwmark 0x1 lookup 100
+ip route replace default via "$TRANSIT_HOST_IP" dev "$TRANSIT_IF" table 100
+
 # --- Processos ---
 shutdown() {
     log "encerrando"

@@ -17,6 +17,8 @@ docker exec -it portal-gun-frr vtysh -c 'show bgp summary'   # expect: Establish
 ip route | grep 128.128.0.2                                  # learned routes on the host
 ```
 
+On macOS: `./macos/setup.sh` (see [6.9 macOS](#69-macos-experimental)).
+
 - **Container `vpn`:** strongSwan + xl2tpd + pppd. It brings up the tunnel and forwards everything it receives into `ppp0`.
 - **Container `frr`:** FRR in the host network namespace. It runs iBGP AS 65000 with the PPP peer and installs the routes in the host with next-hop `128.128.0.2`.
 - **Transit network:** the two containers talk over `128.128.0.0/24`. The host/FRR side is `.1` and the `vpn` container is `.2`.
@@ -128,6 +130,7 @@ portal-gun/
 ├── .env.example         # every option, with defaults
 ├── docs/
 │   └── README.pt-BR.md  # Portuguese version of this document
+├── macos/               # macOS variant: setup, route-sync, uninstall
 ├── vpn/
 │   ├── Dockerfile
 │   ├── entrypoint.sh    # strongSwan, xl2tpd, NAT, watchdog
@@ -314,6 +317,7 @@ All options live in `.env` (template: `.env.example`).
 | `BGP_ROUTER_ID` | `auto` | OPTIONAL | `auto` = PPP local address |
 | `BGP_NETWORKS` | empty | OPTIONAL | Space-separated prefixes announced to the LNS. They are forwarded without NAT. |
 | `BGP_ACCEPT_DEFAULT` | `no` | OPTIONAL | Accept `0.0.0.0/0` from the LNS |
+| `ALLOW_FORWARD` | `no` | OPTIONAL | Let routed traffic from other hosts (or the Mac, via Colima) into the VPN. Set to `yes` by `macos/setup.sh`. |
 
 ### 6.7 Routing policy
 
@@ -347,6 +351,65 @@ flowchart TD
 | `CHAP authentication failed` + `radius timeout` | Wrong user, or the RADIUS server is not answering the LNS | Check the user; check `/radius monitor` on the LNS |
 | BGP `Active`/`Idle`, `Waiting for peer OPEN` | The LNS accepts TCP/179 and then closes it, because no session exists for the client IP | Create the BGP session on the LNS |
 | BGP up, but one destination bypasses the VPN | The host LAN covers that destination | See [Limitations](#9-limitations) |
+
+### 6.9 macOS (experimental)
+
+On macOS, Docker runs inside a Linux VM. The containers are the same, but two things change:
+
+- The "host" of `network_mode: host` is the VM, so BGP routes land in the **VM** routing table, not the Mac's.
+- The L2TP/PPP kernel modules **MUST** exist in the VM kernel.
+
+The macOS variant solves both with [Colima](https://github.com/abiosoft/colima) and a route sync daemon:
+
+```mermaid
+flowchart LR
+    subgraph MAC["macOS"]
+        APP["Mac apps"] --> RT["macOS routing table<br/>BGP routes via VM IP"]
+        SYNC["route-sync (launchd, root)<br/>every 10 s"]
+    end
+    subgraph VM["Colima VM (vz, --network-address)"]
+        FRR["frr<br/>VM host network"]
+        VPN["vpn<br/>128.128.0.2"]
+        FRR -- "128.128.0.0/24" --> VPN
+    end
+    RT -- "vmnet" --> VM
+    SYNC -. "docker exec: ip route show proto bgp" .-> FRR
+    SYNC -- "route add / delete" --> RT
+    VPN == "L2TP/IPsec" ==> LNS["LNS"]
+```
+
+**Requirements**
+
+- The Mac **MUST** run macOS 13 or later and have [Homebrew](https://brew.sh) installed. The user **MUST** be an administrator.
+- Docker Desktop **MUST NOT** be used for this. Its network is userspace-only, so the Mac cannot route traffic into its VM.
+- Each Mac **MUST** use its own RADIUS user. Sharing one user with another machine makes the sessions kick each other.
+
+**Install and operate**
+
+```bash
+git clone https://github.com/Hexa-Networks/portal-gun.git && cd portal-gun
+./macos/setup.sh                                  # installs everything; asks for credentials and the sudo password
+netstat -rn -f inet | grep <VM_IP> | wc -l        # routes on the Mac
+tail -f /var/log/portal-gun-route-sync.log        # route sync log
+./macos/uninstall.sh                              # remove (routes are cleaned up)
+```
+
+`setup.sh` **SHALL**:
+
+1. Install `colima`, `docker` and `docker-compose` with Homebrew.
+2. Create the Colima profile `portal-gun` (`--vm-type vz --network-address`, 2 CPU, 2 GB RAM).
+3. Load `l2tp_ppp` in the VM, installing `linux-modules-extra` if it is missing.
+4. Set `ALLOW_FORWARD=yes` in `.env` and run `./start.sh`.
+5. Install the root `route-sync` LaunchDaemon and a LaunchAgent that starts the VM and the containers at login.
+
+**Route sync behaviour**
+
+- `route-sync` **SHALL** add every route the VM learned over BGP to the Mac, with the VM IP as gateway, and **SHALL** remove routes that disappear.
+- If the VM or the `frr` container is unavailable, `route-sync` **SHALL** remove all its routes, so traffic never goes to a dead gateway.
+- `route-sync` **SHALL** only delete routes it added itself. A route that already exists on the Mac (for example the Mac LAN) is left untouched and retried later.
+- `./update.sh` works the same way on macOS.
+
+**Return path:** the `vpn` container marks connections that arrive from the transit network (connmark), and their replies go back through the transit network instead of into the tunnel. This also lets other LAN hosts route through a Linux host when `ALLOW_FORWARD=yes`.
 
 ---
 
