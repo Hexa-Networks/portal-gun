@@ -25,12 +25,28 @@ BREW=$(brew --prefix)
 export PATH="$BREW/bin:$PATH"
 
 step "Instalando dependências (colima, docker, docker-compose)"
-for pkg in colima docker docker-compose; do
+for pkg in colima docker docker-compose docker-buildx; do
     brew list "$pkg" >/dev/null 2>&1 || brew install "$pkg"
 done
 mkdir -p "$HOME/.docker/cli-plugins"
 ln -sfn "$BREW/opt/docker-compose/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+ln -sfn "$BREW/opt/docker-buildx/bin/docker-buildx" "$HOME/.docker/cli-plugins/docker-buildx"
 docker compose version >/dev/null || die "docker compose não ficou disponível"
+
+# Sobra do Docker Desktop: "credsStore": "desktop" quebra o docker CLI sem o Docker Desktop instalado
+CFG="$HOME/.docker/config.json"
+if [ -f "$CFG" ] && grep -q '"credsStore"[[:space:]]*:[[:space:]]*"desktop"' "$CFG" \
+   && ! command -v docker-credential-desktop >/dev/null; then
+    cp "$CFG" "$CFG.bak-portal-gun"
+    /usr/bin/python3 - "$CFG" <<'PY'
+import json, sys
+p = sys.argv[1]
+c = json.load(open(p))
+c.pop("credsStore", None)
+json.dump(c, open(p, "w"), indent=2)
+PY
+    echo "Removido \"credsStore\": \"desktop\" de $CFG (backup em $CFG.bak-portal-gun)"
+fi
 
 step "Subindo a VM do Colima ($PROFILE)"
 if colima status -p "$PROFILE" >/dev/null 2>&1; then
