@@ -11,6 +11,8 @@
 ```bash
 git clone https://github.com/Hexa-Networks/portal-gun.git && cd portal-gun
 ./start.sh                                                   # pergunta as credenciais, grava o .env e sobe tudo
+su -c ./install.sh                                           # (root) sobe automaticamente no boot
+./update.sh                                                  # compara com o GitHub e atualiza
 docker exec -it portal-gun-frr vtysh -c 'show bgp summary'   # esperado: Established + prefixos recebidos
 ip route | grep 128.128.0.2                                  # rotas aprendidas no host
 ```
@@ -129,6 +131,8 @@ Confirmado com traceroute:
 portal-gun/
 ├── docker-compose.yml   # serviços, rede de trânsito, volume compartilhado
 ├── start.sh             # dialog de credenciais + docker compose up
+├── update.sh            # compara com o GitHub, mostra as mudanças, atualiza + rebuild
+├── install.sh           # (root) unidade systemd: sobe no boot
 ├── .env.example         # todas as opções, com valores padrão
 ├── docs/
 │   └── README.pt-BR.md  # este documento
@@ -195,7 +199,7 @@ stateDiagram-v2
 ```
 
 - O watchdog do `vpn` **SHALL** tentar reconectar a cada ~50 segundos enquanto o `ppp0` estiver fora. Ele não tenta mais rápido que isso, para não sobrecarregar o RADIUS com tentativas de autenticação.
-- Os dois containers **SHALL** reiniciar sozinhos (`restart: unless-stopped`), inclusive após reboot do host.
+- Depois de rodar o `install.sh`, a stack **SHALL** subir no boot pela unidade systemd `portal-gun.service`, mesmo depois de um `docker compose down`. Durante a execução, os dois containers **SHALL** reiniciar sozinhos se caírem (`restart: unless-stopped`).
 - Se os endereços PPP mudarem, o container `frr` **SHALL** gerar a configuração de novo e recarregá-la sem reiniciar.
 
 ---
@@ -231,7 +235,61 @@ cd portal-gun
 - O `start.sh` **SHALL** gravar o `.env` com permissão `600`.
 - O `.env` **MUST NOT** ser commitado. Ele está no `.gitignore`.
 
-### 6.3 Operação
+### 6.3 Subir no boot
+
+```bash
+su -c ./install.sh               # ou: sudo ./install.sh
+systemctl status portal-gun      # active (exited) = stack no ar
+su -c './install.sh --uninstall' # remove a unidade (mantém o projeto e o .env)
+```
+
+- O `install.sh` **MUST** ser rodado como root. Ele **SHALL**:
+  - criar o `/etc/systemd/system/portal-gun.service`, que roda `docker compose up -d` no boot e `docker compose down` no desligamento;
+  - habilitar o `docker.service`;
+  - carregar os módulos de kernel no boot, via `/etc/modules-load.d/portal-gun.conf`.
+- A unidade aponta para o diretório de onde o `install.sh` foi rodado. Se o projeto mudar de lugar, o `install.sh` **MUST** ser rodado de novo.
+- O `.env` **SHOULD** existir antes do serviço subir (rode o `./start.sh` antes).
+
+### 6.4 Atualização
+
+```bash
+./update.sh           # mostra a versão instalada vs GitHub + mudanças, pergunta e atualiza
+./update.sh --check   # só verifica; exit 0 = atualizado, 10 = há atualização
+./update.sh -y        # atualiza sem perguntar (ex.: automação)
+```
+
+```mermaid
+flowchart TD
+    A["./update.sh"] --> B["git fetch origin"]
+    B --> C{"local == GitHub?"}
+    C -->|sim| Z["Já está atualizado"]
+    C -->|"não, atrasado"| D["Mostra versões, commits<br/>e arquivos alterados"]
+    D --> E{"Alterações locais em<br/>arquivos do projeto?"}
+    E -->|sim| X["Aborta: faça git stash antes"]
+    E -->|não| F{"Confirma?"}
+    F -->|não| Y["Cancelado"]
+    F -->|sim| G["git merge --ff-only"]
+    G --> H["Lista opções novas do .env.example"]
+    H --> I{"Stack rodando?"}
+    I -->|sim| J["docker compose up -d --build"]
+    I -->|não| K["docker compose build"]
+```
+
+- O `update.sh` **SHALL NOT** mexer no `.env`. Opções novas do `.env.example` são listadas e usam o valor padrão até serem adicionadas ao `.env`.
+- O `update.sh` **SHALL** abortar se houver arquivos do projeto alterados localmente, ou se o histórico local e o remoto divergirem.
+- Numa atualização com a stack rodando, a VPN **SHALL** reconectar, o que leva cerca de 30 s.
+- O `start.sh` **SHALL** avisar quando houver versão nova.
+- O host **MUST** conseguir ler o repositório no GitHub. Ele é privado, então autentique com `gh auth login` ou use uma deploy key.
+
+**Publicar uma versão nova (mantenedores):** faça o commit, crie a tag e envie:
+
+```bash
+git tag -a v1.1.0 -m "descrição curta" && git push && git push --tags
+```
+
+O `update.sh` mostra as tags como versão (por exemplo, `v1.0.0` → `v1.1.0`).
+
+### 6.5 Operação
 
 ```bash
 docker compose ps                                            # o vpn MUST ficar "healthy"
@@ -240,11 +298,11 @@ docker compose logs -f frr                                   # [frr] + logs do F
 docker exec -it portal-gun-frr vtysh -c 'show bgp summary'
 docker exec -it portal-gun-frr vtysh -c 'show ip route bgp'
 ip route | grep -c 'via 128.128.0.2'                         # quantidade de rotas aprendidas
-docker compose down                                          # parar
-docker compose up -d                                         # subir
+systemctl stop portal-gun                                    # parar (root; ou: docker compose down)
+systemctl start portal-gun                                   # subir (root; ou: docker compose up -d)
 ```
 
-### 6.4 Referência de configuração
+### 6.6 Referência de configuração
 
 Todas as opções ficam no `.env` (modelo: `.env.example`).
 
@@ -265,7 +323,7 @@ Todas as opções ficam no `.env` (modelo: `.env.example`).
 | `BGP_NETWORKS` | vazio | OPTIONAL | Prefixos anunciados ao LNS, separados por espaço. Passam pelo túnel sem NAT. |
 | `BGP_ACCEPT_DEFAULT` | `no` | OPTIONAL | Aceitar `0.0.0.0/0` vindo do LNS |
 
-### 6.5 Política de rotas
+### 6.7 Política de rotas
 
 | Sentido | Regra |
 |---|---|
@@ -275,7 +333,7 @@ Todas as opções ficam no `.env` (modelo: `.env.example`).
 | Entrada | Todas as outras rotas são aceitas, com next-hop reescrito para `128.128.0.2` |
 | Saída | Só o que está em `BGP_NETWORKS` é anunciado. Com a lista vazia, nada é anunciado. |
 
-### 6.6 Diagnóstico
+### 6.8 Diagnóstico
 
 ```mermaid
 flowchart TD
@@ -310,6 +368,7 @@ flowchart TD
 | CPU | Desprezível em repouso; o plano de dados roda no kernel (xfrm + l2tp_ppp) |
 | Overhead por pacote | Cerca de 60–80 bytes (ESP + NAT-T + L2TP + PPP). O MTU do PPP é 1400 e o MSS TCP é ajustado. |
 | Tempo de implantação | Cerca de 1 minuto por host, depois que o lado do LNS estiver provisionado |
+| Tempo de atualização | Cerca de 1–2 minutos (`git pull` + rebuild das imagens + ~30 s para a VPN reconectar) |
 | Carga no RADIUS | No máximo uma tentativa de autenticação a cada ~50 s por cliente enquanto o túnel estiver fora |
 
 ---
