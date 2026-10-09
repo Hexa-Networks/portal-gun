@@ -1,5 +1,7 @@
 # portal-gun
 
+> 🇧🇷 [Versão em português](docs/README.pt-BR.md)
+
 > L2TP/IPsec tunnel to the Hexa LNS (VPN-SERVER) with a BGP session inside it, packaged as two Docker containers. Routes learned over BGP are installed in the **host** routing table and forwarded through the tunnel.
 
 ---
@@ -120,6 +122,8 @@ portal-gun/
 ├── docker-compose.yml   # services, transit network, shared volume
 ├── start.sh             # credential dialog + docker compose up
 ├── .env.example         # every option, with defaults
+├── docs/
+│   └── README.pt-BR.md  # Portuguese version of this document
 ├── vpn/
 │   ├── Dockerfile
 │   ├── entrypoint.sh    # strongSwan, xl2tpd, NAT, watchdog
