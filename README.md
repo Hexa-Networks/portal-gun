@@ -59,7 +59,7 @@ flowchart LR
         XL --> PPP
         SS -. "encrypts L2TP<br/>udp/1701" .-> PPP
     end
-    PPP == "L2TP over IPsec<br/>UDP 4500 (NAT-T)" ==> LNS["LNS / VPN-SERVER<br/>203.0.113.10"]
+    PPP == "L2TP over IPsec<br/>UDP 4500 (NAT-T)" ==> LNS["LNS / VPN-SERVER<br/>LNS_IP"]
     LNS --- NET[("Hexa networks<br/>~700 prefixes")]
 ```
 
@@ -91,7 +91,7 @@ flowchart LR
 
 | Element | Address | Notes |
 |---|---|---|
-| LNS public IP | `203.0.113.10` | Pinned on the host via the local default gateway to avoid routing loops. |
+| LNS public IP | `LNS_IP` (from `.env`) | Pinned on the host via the local default gateway to avoid routing loops. |
 | Transit subnet | `128.128.0.0/24` | Docker bridge `pgun0`. |
 | Host / FRR | `128.128.0.1` | Bridge gateway. FRR listens here because it runs in the host namespace. |
 | `vpn` container | `128.128.0.2` | Next-hop for every learned route. |
@@ -108,7 +108,7 @@ flowchart LR
     D --> E["172.16.0.1"] --> F["172.16.1.1"] --> G["172.16.2.5"]
 ```
 
-Verified with traceroute:
+Example traceroute (addresses are illustrative):
 
 ```
 1  128.128.0.2      vpn container (transit)
@@ -300,7 +300,7 @@ All options live in `.env` (template: `.env.example`).
 
 | Variable | Default | Level | Description |
 |---|---|---|---|
-| `LNS_IP` | `203.0.113.10` | REQUIRED | LNS public address |
+| `LNS_IP` | — | REQUIRED | LNS public address (ask the NOC) |
 | `IPSEC_PSK` | — | REQUIRED | IPsec pre-shared key |
 | `L2TP_USER` / `L2TP_PASS` | — | REQUIRED | PPP credentials (CHAP) |
 | `IPSEC_IKE` / `IPSEC_ESP` | AES/SHA1/MODP set | OPTIONAL | IKEv1 phase 1 / phase 2 proposals |
