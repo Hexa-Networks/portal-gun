@@ -1,0 +1,8 @@
+#!/bin/bash
+# Chamado pelo pppd quando a sessão PPP cai.
+. /etc/portal-gun.conf
+
+ip route replace default via "$TRANSIT_HOST_IP"
+rm -f "$STATE_DIR/ppp.env"
+
+echo "[vpn] PPP down: $PPP_IFACE"

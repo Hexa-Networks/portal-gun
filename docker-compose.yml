@@ -1,0 +1,58 @@
+name: portal-gun
+
+# Rede de trânsito entre o host/FRR e o container da VPN.
+#   128.128.0.1 -> host (bridge pgun0) — é onde o FRR escuta, pois roda em network_mode: host
+#   128.128.0.2 -> container vpn (strongSwan + xl2tpd + pppd)
+networks:
+  transit:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: pgun0
+    ipam:
+      config:
+        - subnet: ${TRANSIT_SUBNET:-128.128.0.0/24}
+          gateway: ${TRANSIT_HOST_IP:-128.128.0.1}
+
+volumes:
+  # Estado compartilhado: o vpn escreve ppp.env (IP local/peer da sessão PPP), o frr lê.
+  state:
+
+services:
+  vpn:
+    build: ./vpn
+    image: portal-gun/vpn:latest
+    container_name: portal-gun-vpn
+    restart: unless-stopped
+    privileged: true          # /dev/ppp, módulos L2TP/PPP, xfrm e iptables
+    env_file: .env
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    networks:
+      transit:
+        ipv4_address: ${TRANSIT_VPN_IP:-128.128.0.2}
+    volumes:
+      - state:/run/portal-gun
+      - /lib/modules:/lib/modules:ro
+    healthcheck:
+      test: ["CMD", "ip", "link", "show", "ppp0"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+
+  frr:
+    build: ./frr
+    image: portal-gun/frr:latest
+    container_name: portal-gun-frr
+    restart: unless-stopped
+    network_mode: host        # rotas aprendidas via BGP vão direto para a tabela do host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - NET_BIND_SERVICE
+      - SYS_ADMIN
+    env_file: .env
+    volumes:
+      - state:/run/portal-gun:ro
+    depends_on:
+      - vpn

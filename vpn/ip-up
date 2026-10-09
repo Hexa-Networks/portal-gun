@@ -1,0 +1,22 @@
+#!/bin/bash
+# Chamado pelo pppd (via /etc/ppp/ip-up) quando a sessão PPP sobe.
+# Ambiente: PPP_IFACE, PPP_LOCAL, PPP_REMOTE.
+. /etc/portal-gun.conf
+
+# Tudo que chega do host (rotas BGP apontam para este container) segue pelo túnel.
+ip route replace default dev "$PPP_IFACE"
+
+# Tráfego do LNS para os prefixos anunciados volta para o host.
+for net in $BGP_NETWORKS; do
+    ip route replace "$net" via "$TRANSIT_HOST_IP"
+done
+
+mkdir -p "$STATE_DIR"
+cat > "$STATE_DIR/ppp.env.tmp" <<EOF
+PPP_IFACE=$PPP_IFACE
+PPP_LOCAL=$PPP_LOCAL
+PPP_REMOTE=$PPP_REMOTE
+EOF
+mv "$STATE_DIR/ppp.env.tmp" "$STATE_DIR/ppp.env"
+
+echo "[vpn] PPP up: $PPP_IFACE local=$PPP_LOCAL peer=$PPP_REMOTE"
