@@ -35,8 +35,11 @@ EOF
 # --- strongSwan ---
 cat > /etc/strongswan.d/portal-gun-logging.conf <<EOF
 charon {
+    # O starter desconecta o stdout do charon; escreve direto no stdout do PID 1 (docker logs).
     filelog {
-        stdout {
+        dockerlog {
+            path = /proc/1/fd/1
+            flush_line = yes
             default = 1
             ike_name = yes
         }
@@ -81,8 +84,7 @@ lns = $LNS_IP
 pppoptfile = /etc/ppp/options.l2tpd.client
 length bit = yes
 autodial = yes
-redial = yes
-redial timeout = 15
+redial = no
 EOF
 
 {

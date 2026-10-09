@@ -19,4 +19,4 @@ PPP_REMOTE=$PPP_REMOTE
 EOF
 mv "$STATE_DIR/ppp.env.tmp" "$STATE_DIR/ppp.env"
 
-echo "[vpn] PPP up: $PPP_IFACE local=$PPP_LOCAL peer=$PPP_REMOTE"
+echo "[vpn] PPP up: $PPP_IFACE local=$PPP_LOCAL peer=$PPP_REMOTE" > /proc/1/fd/1
