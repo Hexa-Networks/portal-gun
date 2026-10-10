@@ -1,0 +1,9 @@
+# Scripts shell e arquivos que entram nos containers: sempre LF (CRLF quebra o bash)
+*.sh            text eol=lf
+vpn/ip-up       text eol=lf
+vpn/ip-down     text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+.env.example    text eol=lf
+# Scripts do Windows: CRLF
+*.ps1           text eol=crlf

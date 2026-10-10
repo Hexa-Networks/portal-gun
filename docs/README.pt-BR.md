@@ -17,7 +17,7 @@ docker exec -it portal-gun-frr vtysh -c 'show bgp summary'   # esperado: Establi
 ip route | grep 128.128.0.2                                  # rotas aprendidas no host
 ```
 
-No macOS: `./macos/setup.sh` (veja [6.9 macOS](#69-macos)).
+No macOS: `./macos/setup.sh` (veja [6.9 macOS](#69-macos)). No Windows: `.\windows\setup.ps1` (veja [6.10 Windows](#610-windows-experimental)).
 
 - **Container `vpn`:** strongSwan + xl2tpd + pppd. Sobe o túnel e encaminha para o `ppp0` tudo o que recebe.
 - **Container `frr`:** FRR no namespace de rede do host. Fecha iBGP AS 65000 com o peer PPP e instala as rotas no host com next-hop `128.128.0.2`.
@@ -139,6 +139,7 @@ portal-gun/
 ├── docs/
 │   └── README.pt-BR.md  # este documento
 ├── macos/               # variante macOS: setup, route-sync, uninstall
+├── windows/             # variante Windows (WSL2): setup, route-sync, diag, update, uninstall
 ├── vpn/
 │   ├── Dockerfile
 │   ├── entrypoint.sh    # strongSwan, xl2tpd, NAT, watchdog
@@ -420,6 +421,62 @@ O `setup.sh` **SHALL**:
 - O `./update.sh` funciona do mesmo jeito no macOS.
 
 **Caminho de volta:** o container `vpn` marca as conexões que chegam pela rede de trânsito (connmark), e as respostas voltam pela rede de trânsito em vez de entrar no túnel. Isso também permite que outras máquinas da LAN roteiem por um host Linux quando `ALLOW_FORWARD=yes`.
+
+### 6.10 Windows (experimental)
+
+> Ainda não testado num Windows real. Os scripts passaram pela checagem de sintaxe e a lógica foi testada com simulações.
+
+A ideia é a mesma do macOS: o Docker roda numa VM Linux, que no Windows é o **WSL2**. O portal-gun cria uma distro WSL dedicada (`portal-gun`, Ubuntu 24.04) com o Docker Engine instalado direto nela. O Docker Desktop não é usado. Uma tarefa agendada espelha as rotas BGP na tabela de rotas do Windows.
+
+```mermaid
+flowchart LR
+    subgraph WIN["Windows"]
+        APP["apps do Windows"] --> RT["tabela de rotas do Windows<br/>rotas BGP via IP do WSL"]
+        TASK["route-sync.ps1<br/>tarefa agendada (logon, elevada)<br/>a cada 10 s + mantém o WSL vivo"]
+    end
+    subgraph WSL["distro WSL2 portal-gun (modo NAT)"]
+        FRR["frr<br/>rede do host da distro"]
+        VPN["vpn<br/>128.128.0.2"]
+        FRR -- "128.128.0.0/24" --> VPN
+    end
+    RT -- "vEthernet (WSL)" --> WSL
+    TASK -. "wsl.exe docker exec: ip route show proto bgp" .-> FRR
+    TASK -- "New-NetRoute / Remove-NetRoute" --> RT
+    VPN == "L2TP/IPsec" ==> LNS["LNS"]
+```
+
+**Requisitos**
+
+- O Windows **MUST** ser o Windows 10 22H2 ou o Windows 11, com WSL 2.4.4 ou mais novo (o `setup.ps1` roda `wsl --update`).
+- O WSL **MUST** usar o modo de rede NAT, que é o padrão. O `networkingMode=mirrored` no `.wslconfig` não é suportado, porque a distro precisa de um IP próprio para o Windows rotear até ela.
+- O kernel do WSL **MUST** ter `ppp_generic`, `l2tp_ppp`, `esp4` e `xfrm_user`. O `setup.ps1` verifica isso primeiro e para, mostrando a configuração do kernel, se faltar algum. **Esse é o principal risco em aberto.** Se o kernel padrão da Microsoft não tiver esses módulos, será preciso um kernel WSL customizado.
+- O usuário **MUST** ser administrador local. Cada máquina **MUST** usar o próprio usuário no RADIUS.
+
+**Instalação e operação** (PowerShell como administrador)
+
+```powershell
+git clone https://github.com/Hexa-Networks/portal-gun.git; cd portal-gun
+powershell -ExecutionPolicy Bypass -File .\windows\setup.ps1     # instala tudo; pede as credenciais
+.\windows\diag.ps1 [ip]                                         # diagnóstico: Windows -> WSL -> vpn -> túnel
+.\windows\update.ps1                                            # atualiza os containers e os scripts do Windows
+.\windows\uninstall.ps1                                         # remover (as rotas são limpas)
+Get-Content $env:ProgramData\portal-gun\route-sync.log -Tail 20 -Wait
+```
+
+O `setup.ps1` **SHALL**:
+
+1. Instalar ou atualizar o WSL e criar a distro `portal-gun` com systemd ativado.
+2. Verificar os módulos de kernel, depois instalar o Docker Engine e clonar o projeto em `/opt/portal-gun` dentro da distro. O clone acontece dentro do WSL, então os arquivos mantêm o fim de linha LF.
+3. Definir `ALLOW_FORWARD=yes`, rodar o `start.sh` (credenciais) e o `install.sh` (unidade systemd dentro do WSL).
+4. Copiar o `route-sync.ps1` para `%ProgramData%\portal-gun` (só administradores podem alterar) e registrar a tarefa agendada `portal-gun` no logon, com privilégio elevado.
+
+**O comportamento do route-sync** segue as regras do macOS:
+
+- As rotas são criadas no `ActiveStore`, então não persistem após reboot.
+- Só são removidas as rotas que o próprio `route-sync` criou.
+- Todas as rotas são removidas se a distro ou o FRR estiverem indisponíveis.
+- Quando o IP da distro muda, todas as rotas são recriadas com o gateway novo.
+- A tarefa também mantém a distro WSL rodando, porque o WSL desliga distros ociosas.
 
 ---
 
