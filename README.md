@@ -17,7 +17,7 @@ docker exec -it portal-gun-frr vtysh -c 'show bgp summary'   # expect: Establish
 ip route | grep 128.128.0.2                                  # learned routes on the host
 ```
 
-On macOS: `./macos/setup.sh` (see [6.9 macOS](#69-macos-experimental)).
+On macOS: `./macos/setup.sh` (see [6.9 macOS](#69-macos)).
 
 - **Container `vpn`:** strongSwan + xl2tpd + pppd. It brings up the tunnel and forwards everything it receives into `ppp0`.
 - **Container `frr`:** FRR in the host network namespace. It runs iBGP AS 65000 with the PPP peer and installs the routes in the host with next-hop `128.128.0.2`.
@@ -352,7 +352,9 @@ flowchart TD
 | BGP `Active`/`Idle`, `Waiting for peer OPEN` | The LNS accepts TCP/179 and then closes it, because no session exists for the client IP | Create the BGP session on the LNS |
 | BGP up, but one destination bypasses the VPN | The host LAN covers that destination | See [Limitations](#9-limitations) |
 
-### 6.9 macOS (experimental)
+### 6.9 macOS
+
+> Tested on: MacBook Pro Apple Silicon, macOS 26 (Tahoe), Colima 0.10.3, Docker 29.5 — VPN, BGP (~709 prefixes), route sync and traffic validated end-to-end.
 
 On macOS, Docker runs inside a Linux VM. The containers are the same, but two things change:
 
