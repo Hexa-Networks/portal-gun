@@ -17,7 +17,7 @@ docker exec -it portal-gun-frr vtysh -c 'show bgp summary'   # expect: Establish
 ip route | grep 128.128.0.2                                  # learned routes on the host
 ```
 
-On macOS: `./macos/setup.sh` (see [6.9 macOS](#69-macos)). On Windows: `.\windows\setup.ps1` (see [6.10 Windows](#610-windows-experimental)).
+On macOS: `./macos/setup.sh` (see [6.9 macOS](#69-macos)). On Windows: `.\windows\setup.ps1` (test feature, see [6.10 Windows](#610-windows-test-feature)).
 
 - **Container `vpn`:** strongSwan + xl2tpd + pppd. It brings up the tunnel and forwards everything it receives into `ppp0`.
 - **Container `frr`:** FRR in the host network namespace. It runs iBGP AS 65000 with the PPP peer and installs the routes in the host with next-hop `128.128.0.2`.
@@ -131,7 +131,7 @@ portal-gun/
 ├── docs/
 │   └── README.pt-BR.md  # Portuguese version of this document
 ├── macos/               # macOS variant: setup, route-sync, uninstall
-├── windows/             # Windows variant (WSL2): setup, route-sync, diag, update, uninstall
+├── windows/             # Windows variant (WSL2, test feature): setup, route-sync, diag, update, uninstall
 ├── vpn/
 │   ├── Dockerfile
 │   ├── entrypoint.sh    # strongSwan, xl2tpd, NAT, watchdog
@@ -414,9 +414,9 @@ tail -f /var/log/portal-gun-route-sync.log        # route sync log
 
 **Return path:** the `vpn` container marks connections that arrive from the transit network (connmark), and their replies go back through the transit network instead of into the tunnel. This also lets other LAN hosts route through a Linux host when `ALLOW_FORWARD=yes`.
 
-### 6.10 Windows (experimental)
+### 6.10 Windows (test feature)
 
-> Not yet tested on a real Windows machine. The scripts were syntax-checked and their logic tested with mocks.
+> ⚠️ **Test feature: not validated on a real Windows machine yet.** The scripts were syntax-checked and their logic tested with mocks. It **MAY** fail; it **SHOULD NOT** be used in production until validated. Feedback from a first real install is welcome.
 
 Same idea as macOS: Docker runs in a Linux VM, which on Windows is **WSL2**. portal-gun creates a dedicated WSL distro (`portal-gun`, Ubuntu 24.04) with Docker Engine installed directly in it. Docker Desktop is not used. A scheduled task mirrors the BGP routes into the Windows routing table.
 

@@ -35,6 +35,12 @@ function Wsl {
 }
 
 # ---------------------------------------------------------------------------
+Write-Host ''
+Write-Host '  FEATURE DE TESTE: o portal-gun para Windows ainda não foi validado num Windows real.' -ForegroundColor Yellow
+Write-Host '  Ele pode falhar. Não use em produção. Mande a saída deste script para o NOC.' -ForegroundColor Yellow
+$ans = Read-Host '  Continuar? [s/N]'
+if ($ans -notmatch '^[sSyY]$') { Write-Host 'Cancelado.'; exit 0 }
+
 Step 'Verificando o Windows e o WSL'
 $build = [Environment]::OSVersion.Version.Build
 if ($build -lt 19045) { Die "precisa do Windows 10 22H2 (build 19045) ou Windows 11. Build atual: $build" }
