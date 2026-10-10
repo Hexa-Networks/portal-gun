@@ -20,7 +20,10 @@ if ! docker inspect portal-gun-frr >/dev/null 2>&1 || ! docker inspect portal-gu
     exit 1
 fi
 
-D=${1:-$(docker exec portal-gun-frr ip -4 route show proto bgp | awk '$1 !~ /\//{print $1; exit}')}
+# Só aceita um IPv4 como argumento (o zsh passa adiante "#" de comentários colados)
+D=""
+[[ "${1:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && D=$1
+[ -n "$D" ] || D=$(docker exec portal-gun-frr ip -4 route show proto bgp | awk '$1 !~ /\//{print $1; exit}')
 echo "destino de teste: $D"
 echo "rotas no Mac via VM: $(netstat -rn -f inet | awk -v g="$VMIP" '$2==g' | wc -l | tr -d ' ')"
 route -n get "$D" 2>&1 | grep -E 'gateway|interface'
@@ -48,7 +51,7 @@ EOF
 
 h "container vpn"
 docker exec portal-gun-vpn sh -c '
-ip -br a; echo "-- main"; ip route; echo "-- rules"; ip rule; echo "-- table 100"; ip route show table 100
+ip -br a; echo "-- main"; ip route; echo "-- rules"; ip rule; echo "-- table 100"; ip route show table 100; echo "-- table 220 (strongSwan)"; ip route show table 220
 for k in all eth0 ppp0; do echo "rp_filter $k = $(cat /proc/sys/net/ipv4/conf/$k/rp_filter 2>&1)"; done
 echo "-- nat"; iptables -t nat -L POSTROUTING -v -n; iptables -t nat -L PG-NAT -v -n
 echo "-- mangle"; iptables -t mangle -L PREROUTING -v -n'
@@ -59,5 +62,8 @@ docker run --rm --net host --cap-add NET_ADMIN --cap-add NET_RAW nicolaka/netsho
 docker run --rm --net container:portal-gun-vpn --cap-add NET_ADMIN --cap-add NET_RAW nicolaka/netshoot:v0.13 \
     timeout 12 tcpdump -lni any -c 20 "icmp and host $D" 2>&1 | sed 's/^/[vpn] /' &
 sleep 5
+echo "--- ping a partir da VM (origem 128.128.0.1, igual ao Linux)"
+colima ssh -p "$PROFILE" -- ping -c2 -W2 "$D"
+echo "--- ping a partir do Mac (origem 192.168.64.1)"
 ping -c3 "$D"
 wait
