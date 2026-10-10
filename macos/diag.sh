@@ -63,7 +63,7 @@ docker run --rm --net container:portal-gun-vpn --cap-add NET_ADMIN --cap-add NET
     timeout 12 tcpdump -lni any -c 20 "icmp and host $D" 2>&1 | sed 's/^/[vpn] /' &
 sleep 5
 echo "--- ping a partir da VM (origem 128.128.0.1, igual ao Linux)"
-colima ssh -p "$PROFILE" -- ping -c2 -W2 "$D"
+docker run --rm --net host nicolaka/netshoot:v0.13 ping -c2 -W2 "$D"
 echo "--- ping a partir do Mac (origem 192.168.64.1)"
 ping -c3 "$D"
 wait
