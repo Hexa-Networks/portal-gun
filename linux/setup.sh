@@ -136,7 +136,20 @@ normalize_json() { python3 -c 'import json,sys; print(json.dumps(json.load(sys.s
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 DAEMON_CHANGE=no
-if desired_daemon_json > "$TMP/daemon.json"; then
+NEED_JQ=no
+daemon_has_settings() {   # checagem textual, sem depender de python3/jq
+    grep -Eq "\"bip\"[[:space:]]*:[[:space:]]*\"$BIP\"" "$DAEMON_JSON" &&
+    grep -Eq '"ipv6"[[:space:]]*:[[:space:]]*true' "$DAEMON_JSON" &&
+    grep -Eq "\"fixed-cidr-v6\"[[:space:]]*:[[:space:]]*\"$V6\"" "$DAEMON_JSON"
+}
+if [ -s "$DAEMON_JSON" ] && ! command -v python3 >/dev/null && ! command -v jq >/dev/null; then
+    if daemon_has_settings; then
+        ok "daemon.json já tem IPv6 e a rede padrão $BIP"
+    else
+        DAEMON_CHANGE=yes; NEED_JQ=yes
+        todo "ajustar $DAEMON_JSON (IPv6 + rede padrão $BIP), mantendo o que já existe (instala o jq para mesclar)"
+    fi
+elif desired_daemon_json > "$TMP/daemon.json"; then
     if [ -s "$DAEMON_JSON" ] && [ "$(normalize_json < "$DAEMON_JSON")" = "$(normalize_json < "$TMP/daemon.json")" ]; then
         ok "daemon.json já tem IPv6 e a rede padrão $BIP"
     else
@@ -144,8 +157,6 @@ if desired_daemon_json > "$TMP/daemon.json"; then
         todo "ajustar $DAEMON_JSON (IPv6 + rede padrão $BIP), mantendo o que já existe:"
         diff -u <( [ -s "$DAEMON_JSON" ] && cat "$DAEMON_JSON" || echo "{}" ) "$TMP/daemon.json" | tail -n +3 | sed 's/^/           /' || true
     fi
-else
-    die "$DAEMON_JSON existe e não tenho python3 nem jq para mesclar com segurança. Instale python3 ou jq."
 fi
 
 # A rede padrão escolhida colide com algo da máquina?
@@ -211,6 +222,13 @@ ok "usando '$CC' ($($CC version --short))"
 
 if [ "$DAEMON_CHANGE" = yes ]; then
     step "Configurando o Docker: IPv6 + rede padrão $BIP"
+    if [ "$NEED_JQ" = yes ] && ! command -v jq >/dev/null; then
+        case "$PKG" in
+            apt-get) apt-get install -y -qq jq ;;
+            dnf|yum|zypper) $PKG install -y jq >/dev/null ;;
+            *) die "instale python3 ou jq para mesclar o $DAEMON_JSON com segurança" ;;
+        esac
+    fi
     # Recalcula (o get.docker.com pode ter criado o arquivo)
     desired_daemon_json > "$TMP/daemon.json"
     RUNNING=$(docker ps -q 2>/dev/null | wc -l)

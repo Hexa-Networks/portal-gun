@@ -9,10 +9,8 @@
 ## TL;DR
 
 ```bash
-git clone https://github.com/Hexa-Networks/portal-gun.git && cd portal-gun
-./start.sh                                                   # pergunta as credenciais, grava o .env e sobe tudo
-su -c ./install.sh                                           # (root) sobe automaticamente no boot
-./update.sh                                                  # compara com o GitHub e atualiza
+curl -fsSL https://raw.githubusercontent.com/Hexa-Networks/portal-gun/main/linux/setup.sh | sudo bash   # instala tudo (inclusive o Docker)
+cd /opt/portal-gun && ./update.sh                            # compara com o GitHub e atualiza
 docker exec -it portal-gun-frr vtysh -c 'show bgp summary'   # esperado: Established + prefixos recebidos
 ip route | grep 128.128.0.2                                  # rotas aprendidas no host
 ```
@@ -135,6 +133,8 @@ portal-gun/
 ├── start.sh             # dialog de credenciais + docker compose up
 ├── update.sh            # compara com o GitHub, mostra as mudanças, atualiza + rebuild
 ├── install.sh           # (root) unidade systemd: sobe no boot
+├── lib/compose.sh       # escolhe 'docker compose' ou 'docker-compose' 2.x
+├── linux/setup.sh       # instalador em uma linha para Linux (Docker, daemon.json, projeto, boot)
 ├── .env.example         # todas as opções, com valores padrão
 ├── docs/
 │   └── README.pt-BR.md  # este documento
@@ -215,8 +215,11 @@ stateDiagram-v2
 **Host**
 
 - O host **MUST** rodar Linux com os módulos de kernel `ppp_generic`, `l2tp_ppp`, `esp4` e `xfrm_user` disponíveis. O container `vpn` carrega esses módulos sozinho, montando `/lib/modules`.
-- O host **MUST** ter Docker Engine com o plugin Compose v2.
-- O operador **MUST** estar no grupo `docker`: `usermod -aG docker <usuario>`, depois logout e login.
+- O host **MUST** rodar systemd.
+- O host **MUST** ter Docker Engine com **Compose v2**, seja como plugin `docker compose`, seja como binário standalone `docker-compose` 2.x. O `linux/setup.sh` instala o Docker se faltar.
+- O Compose **v1** (o `docker-compose` 1.x em Python, que vem no apt do Debian 12) **MUST NOT** ser usado, porque não entende o formato atual do arquivo compose. O `linux/setup.sh` instala o Compose v2 ao lado dele, como plugin.
+- O daemon do Docker **SHOULD** ter IPv6 ativo e a bridge padrão em `128.66.66.0/24`. O `linux/setup.sh` configura isso no `/etc/docker/daemon.json` (veja 6.2).
+- O operador **MUST** estar no grupo `docker` para rodar os scripts sem sudo. O `linux/setup.sh` adiciona o usuário que chamou o sudo (`SUDO_USER`); faça logout e login para valer.
 - O host **MUST NOT** rodar outro daemon IKE nas portas UDP 500/4500.
 - A LAN do host **SHOULD NOT** coincidir com nenhum prefixo anunciado pelo LNS. Veja [Limitações](#9-limitações).
 - O host **MUST NOT** usar a `128.128.0.0/24` para outra coisa, ou **MUST** alterar as variáveis `TRANSIT_*` no `.env`.
@@ -229,9 +232,60 @@ stateDiagram-v2
 
 ### 6.2 Instalação e execução
 
+**Instalador em uma linha (recomendado):**
+
 ```bash
-git clone https://github.com/Hexa-Networks/portal-gun.git
-cd portal-gun
+curl -fsSL https://raw.githubusercontent.com/Hexa-Networks/portal-gun/main/linux/setup.sh | sudo bash
+```
+
+Opções (com um clone local: `sudo ./linux/setup.sh [opções]`; com a linha única: `... | sudo bash -s -- [opções]`):
+
+| Opção | Efeito |
+|---|---|
+| `--check` | Só analisa a máquina e mostra o que seria feito; não altera nada |
+| `-y`, `--yes` | Não pergunta (aceita mudar o `daemon.json` e reiniciar o Docker) |
+| `--no-start` | Prepara tudo, mas não pede credenciais nem sobe a VPN |
+| `--dir DIR` | Pasta de instalação (padrão `/opt/portal-gun`) |
+| `--branch B` | Branch do GitHub (padrão `main`) |
+
+```mermaid
+flowchart TD
+    A["linux/setup.sh"] --> B["Analisa: sistema, systemd, dependências,<br/>Docker, Compose, daemon.json, conflitos,<br/>UDP 500/4500, módulos de kernel"]
+    B -->|"--check"| Z["Só relatório"]
+    B --> C{"Docker instalado?"}
+    C -->|não| D["get.docker.com"]
+    C -->|sim| E{"Compose v2?<br/>docker compose ou docker-compose 2.x"}
+    E -->|"não (só v1 ou nenhum)"| F["Instala o v2: docker-compose-plugin,<br/>docker-compose-v2 ou binário oficial"]
+    E -->|sim| G
+    D --> G{"daemon.json tem IPv6<br/>+ bip 128.66.66.1/24?"}
+    F --> G
+    G -->|não| H["Mescla (mantém as chaves existentes),<br/>backup, valida, reinicia o Docker"]
+    G -->|sim| I
+    H --> I["Clona/atualiza em /opt/portal-gun"]
+    I --> J["start.sh: credenciais + containers"]
+    J --> K["install.sh: unidade systemd (boot)"]
+```
+
+O `linux/setup.sh` **SHALL**:
+
+1. Analisar a máquina primeiro e mostrar `ok` / `fazer` / `aviso` para cada item. Com `--check`, **SHALL** parar aí.
+2. Instalar o Docker Engine pelo `get.docker.com` **só se o Docker não existir**. Um Docker já instalado é mantido.
+3. Garantir o **Compose v2**. Se só houver o Compose v1, ou nenhum, **SHALL** instalar o v2 (pacote `docker-compose-plugin`, depois `docker-compose-v2`, depois o binário oficial como plugin) sem remover o v1.
+4. Garantir que o `/etc/docker/daemon.json` contenha:
+   ```json
+   { "bip": "128.66.66.1/24", "ipv6": true, "fixed-cidr-v6": "fd66:66:66::/64" }
+   ```
+   As chaves são **mescladas** no arquivo existente e as outras configurações são mantidas. O script grava um backup com data e hora, valida o resultado com `dockerd --validate` e reinicia o Docker. Numa máquina que já roda Docker, **SHALL** pedir confirmação antes, a menos que se use `--yes`. Os valores podem ser trocados com `PG_DOCKER_BIP` e `PG_DOCKER_V6`.
+5. Clonar (ou atualizar) o projeto, rodar o `start.sh` para as credenciais e o `install.sh` para o serviço de boot, e então aguardar as rotas BGP.
+
+Todos os scripts do projeto chamam o Compose pelo `lib/compose.sh`, que escolhe `docker compose` ou `docker-compose` 2.x, o que existir. A unidade systemd recebe o caminho absoluto do comando detectado.
+
+Docker 27 ou mais novo é **RECOMMENDED**. Versões anteriores ativam o IPv6, mas não o `ip6tables` (NAT IPv6), por padrão.
+
+**Instalação manual** (Docker e Compose v2 já presentes):
+
+```bash
+git clone https://github.com/Hexa-Networks/portal-gun.git && cd portal-gun
 ./start.sh            # dialog whiptail: IP do LNS, usuário, senha, PSK, ASNs
 ./start.sh --reconfig # pergunta tudo de novo
 ```
