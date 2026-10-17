@@ -1,7 +1,11 @@
 # Portal Gun — brand kit / kit da marca
 
 <p align="center">
-  <img src="portal-gun-fundo-preto.jpg" width="320" alt="Portal Gun — robotic core passing through a green portal, Hexa Networks VPN">
+  <picture>
+    <!-- Tema escuro: PNG transparente. Tema claro: JPEG com fundo preto (o manual veta o PNG sobre fundo claro). -->
+    <source media="(prefers-color-scheme: dark)" srcset="portal-gun-transparente.png">
+    <img src="portal-gun-fundo-preto.jpg" width="320" alt="Portal Gun — robotic core passing through a green portal, Hexa Networks VPN">
+  </picture>
 </p>
 
 Visual identity of the Hexa Networks VPN project. *Identidade visual do projeto de VPN da Hexa Networks.*

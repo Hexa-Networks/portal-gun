@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="docs/brand/portal-gun-fundo-preto.jpg" width="320" alt="Portal Gun — robotic core passing through a green portal, Hexa Networks VPN">
+  <picture>
+    <!-- Tema escuro: PNG transparente. Tema claro: JPEG com fundo preto (o manual veta o PNG sobre fundo claro). -->
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/portal-gun-transparente.png">
+    <img src="docs/brand/portal-gun-fundo-preto.jpg" width="320" alt="Portal Gun — robotic core passing through a green portal, Hexa Networks VPN">
+  </picture>
 </p>
 
 # portal-gun
