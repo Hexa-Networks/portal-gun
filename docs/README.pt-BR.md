@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brand/portal-gun-fundo-preto.jpg" width="320" alt="Portal Gun — núcleo robótico atravessando um portal verde, VPN da Hexa Networks">
+</p>
+
 # portal-gun
 
 > 🇺🇸 [English version](../README.md)
@@ -137,7 +141,8 @@ portal-gun/
 ├── linux/setup.sh       # instalador em uma linha para Linux (Docker, daemon.json, projeto, boot)
 ├── .env.example         # todas as opções, com valores padrão
 ├── docs/
-│   └── README.pt-BR.md  # este documento
+│   ├── README.pt-BR.md  # este documento
+│   └── brand/           # kit da marca: logo (PNG/JPEG/SVG/PDF) e manual da marca
 ├── macos/               # variante macOS: setup, route-sync, uninstall
 ├── windows/             # variante Windows (WSL2, feature de teste): setup, route-sync, diag, update, uninstall
 ├── vpn/

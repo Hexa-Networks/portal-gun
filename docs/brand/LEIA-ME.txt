@@ -1,0 +1,6 @@
+PORTAL GUN — HEXA NETWORKS
+
+SVG e PDF vetoriais: traçado de contornos com cores sólidas. Sem bitmap embutido. Pequenas diferenças em relação ao PNG são esperadas.
+No CorelDRAW, importe o SVG e salve como CDR. Não foi gerado CDR nativo.
+PNG transparente e JPEG em fundo preto derivados da logo aprovada.
+Ver manual PDF para cores e regras de aplicação.
