@@ -4,6 +4,7 @@
 #   sudo ./install.sh --uninstall -> remove o serviço (não apaga o projeto nem o .env)
 set -euo pipefail
 cd "$(dirname "$0")"
+. lib/compose.sh
 
 UNIT=/etc/systemd/system/portal-gun.service
 DIR=$(pwd -P)
@@ -19,7 +20,12 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 command -v docker >/dev/null || { echo "Docker não encontrado." >&2; exit 1; }
-docker compose version >/dev/null 2>&1 || { echo "Plugin Docker Compose v2 não encontrado." >&2; exit 1; }
+# Caminho absoluto do Compose v2 para o systemd ("docker compose" ou "docker-compose" 2.x)
+case "$(compose_cmd)" in
+    "docker compose") COMPOSE="$(command -v docker) compose" ;;
+    docker-compose)   COMPOSE="$(command -v docker-compose)" ;;
+    *) compose version; exit 1 ;;   # mostra o erro explicativo do helper
+esac
 [ -f .env ] || echo "Aviso: .env ainda não existe. Rode ./start.sh antes (como usuário) para informar as credenciais."
 
 # Módulos de kernel carregados já no boot (o container também tenta, mas assim fica garantido)
@@ -47,8 +53,8 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=$DIR
-ExecStart=/usr/bin/docker compose up -d --remove-orphans
-ExecStop=/usr/bin/docker compose down
+ExecStart=$COMPOSE up -d --remove-orphans
+ExecStop=$COMPOSE down
 TimeoutStartSec=600
 
 [Install]

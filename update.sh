@@ -5,6 +5,7 @@
 #   ./update.sh -y       -> atualiza sem perguntar
 set -euo pipefail
 cd "$(dirname "$0")"
+. lib/compose.sh
 
 MODE=update
 ASSUME_YES=no
@@ -88,12 +89,12 @@ if [ -f .env ]; then
 fi
 
 echo
-if [ -n "$(docker compose ps -q 2>/dev/null)" ]; then
+if [ -n "$(compose ps -q 2>/dev/null)" ]; then
     echo "Reconstruindo e reiniciando os containers..."
-    docker compose up -d --build
+    compose up -d --build
 else
-    echo "Containers parados: só reconstruindo as imagens. Suba com 'docker compose up -d' ou ./start.sh."
-    docker compose build
+    echo "Containers parados: só reconstruindo as imagens. Suba com ./start.sh."
+    compose build
 fi
 
 echo

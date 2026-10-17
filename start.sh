@@ -4,6 +4,7 @@
 #   ./start.sh --reconfig -> pergunta tudo de novo
 set -euo pipefail
 cd "$(dirname "$0")"
+. lib/compose.sh
 
 ENV_FILE=.env
 RECONFIG=no
@@ -78,10 +79,10 @@ if $TIMEOUT ./update.sh --check >/dev/null 2>&1; then :; else
     [ $? -eq 10 ] && echo ">>> Há uma versão nova do portal-gun no GitHub. Rode ./update.sh para ver e atualizar." && echo
 fi
 
-docker compose up -d --build
+compose up -d --build
 echo
 echo "Containers no ar. Acompanhe com:"
-echo "  docker compose logs -f"
+echo "  $(compose_cmd) logs -f"
 echo "  docker exec -it portal-gun-frr vtysh -c 'show bgp summary'"
 
 if [ "$(uname)" = Linux ] && ! systemctl is-enabled portal-gun.service >/dev/null 2>&1; then
